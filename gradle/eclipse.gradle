@@ -1,0 +1,58 @@
+import org.gradle.plugins.ide.eclipse.model.SourceFolder
+
+// add code formatter and compiler settings
+task copyEclipseSettings << {
+    copy {
+        from rootProject.file('gradle/eclipse.settings')
+        into '.settings'
+    }
+}
+eclipseJdt.dependsOn copyEclipseSettings
+
+// Use separate main/test outputs (prevents WTP from packaging test classes)
+eclipse.classpath.defaultOutputDir = file("bin/main")
+eclipse.classpath.file.whenMerged { classpath ->
+    classpath.entries.findAll{ it instanceof SourceFolder }.each {
+        it.output = "bin/" + it.path.split("/")[1]
+    }
+}
+
+// clean old files from bin
+task cleanEclipseBin {
+    onlyIf { project.file('bin').exists() }
+    doLast {
+        ant.delete(includeEmptyDirs: true, defaultExcludes: false) {
+            fileset(dir: project.file('bin'), excludes: sourceSets.collect{it.name + '/**'}.join(','), defaultExcludes: false)
+        }
+    }
+}
+eclipseJdt.dependsOn cleanEclipseBin
+
+
+// prevent access to java.util.logging package
+eclipse.classpath.file.whenMerged { classpath ->
+    classpath.entries.each { cp ->
+       if(cp.path == 'org.eclipse.jdt.launching.JRE_CONTAINER') {
+           cp.accessRules += new org.gradle.plugins.ide.eclipse.model.AccessRule('nonaccessible', 'java/util/logging/**')
+       }
+    }
+}
+
+// workaround for GRADLE-1422
+// remove any dependency not in the runtime configuration from WTP deployment
+project.eclipseClasspath.doFirst {
+   // delay adding whenMerged till the entryAttributes are added (must be the last whenMerged)
+   project.eclipse.classpath.file.whenMerged { classpath ->
+       def includeDeps = project.configurations.getByName('runtime').collect { f -> f.canonicalPath } as Set
+       classpath.entries.each { cp ->
+           if(cp instanceof org.gradle.plugins.ide.eclipse.model.Library) {
+               def include = includeDeps.contains(file(cp.path).canonicalPath)
+               def attr = 'org.eclipse.jst.component.dependency'
+               if(!include) {
+                   cp.entryAttributes.remove(attr)
+               }
+           }
+       }
+   }
+}
+

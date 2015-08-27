@@ -1,0 +1,96 @@
+import com.sun.org.apache.xalan.internal.xsltc.cmdline.Compile
+
+//Remove any references to bootstrap
+description = """Gradle Bootstrap"""
+group = 'com.chapman.bootstrap'
+version = release + '.' + build
+
+apply plugin: 'maven'
+apply plugin: 'eclipse'
+apply plugin: 'idea'
+
+apply plugin: 'java'
+apply plugin: 'eclipse-wtp'
+
+apply plugin: 'propdeps'
+apply plugin: 'propdeps-maven'
+apply plugin: 'propdeps-idea'
+apply plugin: 'propdeps-eclipse'
+
+apply from: rootProject.file('gradle/eclipse.gradle')
+
+// Enable QueryDsl generation
+//apply from: rootProject.file('gradle/querydsl.gradle')
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+buildscript {
+	repositories {
+	    maven{url 'http://repo.spring.io/plugins-release/'}
+	}
+    dependencies {
+        classpath 'org.springframework.build.gradle:propdeps-plugin:0.0.7'
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Start : Apache Commons
+    compile group: 'commons-collections', name: 'commons-collections', version: '3.2.1'
+    // End : Apache Commons
+    
+    // Start : Project Lombok
+    compile group: 'org.projectlombok', name: 'lombok', version: '1.16.2'
+    // End : Project Lombok
+    
+    // Start: Logging
+    def log4jVersion = '1.2.17'
+    runtime group: 'log4j', name: 'log4j', version: log4jVersion
+    // End: Logging
+    
+    testCompile group: 'junit', name: 'junit', version: '4.+'
+}
+
+test {
+    systemProperties 'property': 'value'
+}
+
+tasks.withType(Compile) {
+    options.encoding = 'UTF-8'
+}
+
+// task to write a pom file
+task writePom << {
+    pom{}.writeTo("$buildDir/pom.xml")
+}
+    
+// Configure the root project:
+task afterEclipseImport {
+    doLast {
+        // Create an empty .classpath file in the root project if doesn't exists
+        if(!file('.classpath').exists()) {
+            file('.classpath').withWriter{ writer ->
+                def xml = new groovy.xml.MarkupBuilder(writer)
+                xml.mkp.xmlDeclaration(version: "1.0", encoding: "UTF-8")
+                xml.setDoubleQuotes(true)
+                xml.classpath() {
+                    classpathentry(exported: "true", kind: "con", path: "org.eclipse.jdt.launching.JRE_CONTAINER")
+                }
+            }
+        }
+
+        // remove any src classpathentry
+        def xml = new XmlParser().parse(file('.classpath'))
+        xml.classpathentry.findAll{ it.'@kind' == 'src' }.each{ xml.remove(it) }
+        file('.classpath').withWriter { writer ->
+            writer << '<?xml version="1.0" encoding="UTF-8"?>\n'
+            def printer = new XmlNodePrinter(new PrintWriter(writer), '    ')
+            printer.preserveWhitespace = true
+            printer.print(xml)
+        }
+    }
+}
